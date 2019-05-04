@@ -1,0 +1,132 @@
+---
+title: "Untitled"
+author: "Sophie Li"
+date: "4/30/2019"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+source("spam_functions.R")
+```
+
+# Initializing variables
+
+```{r}
+n <- 100
+  
+beta_r <- 1
+beta_d <- 1
+pi_s <- 0.75
+
+# epsilon, eta < 0.25
+epsilon <- 0.1 # S as L
+eta <- 0.1 # L as S
+
+alpha_l <- 1
+alpha_s <- 1
+  
+# gamma > 1, xi > 1
+gamma <- beta_r / beta_d
+xi <- alpha_l / alpha_s
+```
+
+
+```{r}
+run_simulation <- function(n, sigma_s, sigma_l) {
+  results_df <- data.frame(pi_s = seq(0, 1, 0.01),
+                         points_spammer = NA,
+                         points_users = NA)
+  for (p in 0:100) {
+    pi_s <- p / 100
+    spammer <- list(pi_s = pi_s,
+                  beta_r = 1,
+                  beta_d = 1,
+                  points = 0)
+    u_list <- reset_u_list(n,
+                           sigma_s = eval(parse(text = sigma_s)),
+                           sigma_l = eval(parse(text = sigma_l)),
+                           alpha_s = 1,
+                           alpha_l = 1)
+    messages <- generate_messages(n, pi_s, epsilon = 0.1, eta = 0.1)
+    results <- calculate_points(spammer, u_list, messages)
+    results_df[p+1, "points_spammer"] <- results$spammer$points
+    results_df[p+1, "points_users"] <- results$points_users
+  }
+return(results_df)
+}
+```
+
+```{r}
+# generate list of random numbers -> spam/legitimate -> run through filter to get classification -> match to user -> generate another random number -> read if random number is less than or equal to sigma_s or sigma_l -> add/subtract points
+
+n <- 100
+
+results_df <- run_simulation(100,
+                             sigma_s = "0",
+                             sigma_l = "1")
+
+reshape2::melt(results_df, id="pi_s")
+
+ggplot(reshape2::melt(results_df, id="pi_s"), aes(x = pi_s, y = value)) +
+  geom_line(aes(color = variable))
+```
+
+```{r}
+estBetaParams <- function(mu, var) {
+  alpha <- ((1 - mu) / var - 1 / mu) * mu ^ 2
+  beta <- alpha * (1 / mu - 1)
+  return(params = list(alpha = alpha, beta = beta))
+}
+x <- seq(0, 1, 0.01)
+estBetaParams(0.81, 0.01)
+qplot(x, dbeta(x, 11.6559, 2.7341))
+estBetaParams(0.05, 0.01)
+qplot(x, dbeta(x, 0.1875, 3.5625))
+```
+
+```{r}
+max_pi_s_beta <- data.frame(pi_s = rep(NA, 100),
+                            points_spammer = rep(NA, 100))
+for (i in 1:100) {
+  results_beta <- run_simulation(100,
+                             sigma_s = "rbeta(1, 0.1875, 3.5625)",
+                             sigma_l = "rbeta(1, 11.6559, 2.7341)")
+  spam_max <- which.max(results_beta[, 2])
+  max_pi_s_beta[i, 1] <- results_beta[spam_max, "pi_s"]
+  max_pi_s_beta[i, 2] <- results_beta[spam_max, "points_spammer"]
+}
+
+max_pi_s_nash <- data.frame(pi_s = rep(NA, 100),
+                            points_spammer = rep(NA, 100))
+for (i in 1:100) {
+  results_nash <- run_simulation(100,
+                             sigma_s = "0",
+                             sigma_l = "1")
+  spam_max <- which.max(results_nash[, 2])
+  max_pi_s_nash[i, 1] <- results_nash[spam_max, "pi_s"]
+  max_pi_s_nash[i, 2] <- results_nash[spam_max, "points_spammer"]
+}
+
+ggplot(max_pi_s_nash, aes(pi_s, points_spammer)) +
+  geom_point(alpha = 0.1)
+
+ggplot(max_pi_s_beta, aes(pi_s, points_spammer)) +
+  geom_point(alpha = 0.1)
+
+beta_dist_df <- as.data.frame(cbind(x = x, beta_l = dbeta(x, 11.6559, 2.7341), beta_s  = dbeta(x, 0.1875, 3.5625)))
+ggplot(reshape2::melt(beta_dist_df, id = "x"), aes(x, value)) +
+  geom_line(aes(color = variable)) +
+  scale_color_discrete(labels = c("sigma_l\nmean = 0.81\nvar = 0.01\n",
+                                  "sigma_s\nmean = 0.05\nvar = 0.01\n"))
+
+```
+
+
+
+```{r}
+qplot(max_pi_s_nash$pi_s)
+qplot(max_pi_s_beta$pi_s)
+```
+
+
